@@ -26,7 +26,7 @@ Conditioned on a *consistent* selected mode, generates multi-modal trajectory pr
 
 **Auto-regressive generation** means the trajectory is produced **one waypoint at a time**, where each new point is conditioned on all previously generated points. Formally, the full trajectory $\tau = (w_1, w_2, \ldots, w_T)$ is factored as:
 
-$$p(\tau \mid s, m) = \prod_{t=1}^{T} p(w_t \mid w_{<t}, s, m)$$
+$$p(\tau \mid s, m) = \prod_{t=1}^{T} p(w_t \mid w_{\lt t}, s, m)$$
 
 where $s$ is the scene state and $m$ is the selected driving mode. At each step, the model attends to all prior waypoints and predicts the distribution over the next one — similar in spirit to how a language model generates tokens sequentially. This structure lets the generator produce **diverse, long-horizon trajectories** while ensuring local geometric coherence (smooth transitions between consecutive waypoints). The conditioning on a fixed mode $m$ throughout the entire rollout is what enforces **temporal consistency**: the trajectory cannot abruptly "change intent" mid-sequence, a failure mode that plagued earlier auto-regressive planners trained with RL.
 
