@@ -38,7 +38,17 @@ K-Disk clustering is a variant of K-Means adapted for motion data. Standard K-Me
 
 $$p(\tau) = \prod_{t=1}^{16} p(a_t \mid a_{\lt t}, \text{scene})$$
 
+where:
+- $\tau$ — the full 8-second trajectory (a sequence of 16 action tokens)
+- $\prod_{t=1}^{16}$ — product over all 16 time steps (chain rule of probability)
+- $a_t$ — the action token at step $t$ (one of 2048 codebook entries, representing $(Δx, Δy, Δθ)$ over 0.5s)
+- $a_{\lt t} = (a_1, a_2, \dots, a_{t-1})$ — all previously generated tokens (the partial trajectory so far)
+- $\text{scene}$ — the scene context: camera images, HD map, surrounding agent states, and navigation command
+- $p(a_t \mid a_{\lt t}, \text{scene})$ — the model's predicted probability distribution over 2048 tokens at step $t$, given everything generated so far and the current scene
+
 This requires only 16 forward passes, each scoring 2048 candidates. The tradeoff is that auto-regressive decoding finds a good sequence rather than the globally optimal one; beam search can partially mitigate this by maintaining the top-$B$ partial sequences at each step.
+
+Each forward pass gives a probability disribution over 2048 tokens, with no feasibility guarantee. The model outputs a softmax over all 2048 candidates.
 
 ### 2. Dual Thinking Modes via Supervised Fine-Tuning (SFT)
 
@@ -48,6 +58,28 @@ SFT trains the model jointly on two types of outputs:
 - **Slow thinking (CoT + action):** The model first generates a chain-of-thought reasoning trace — describing scene context, intent, and decision rationale — before outputting the action tokens. High-quality CoT annotations are distilled from a large-scale VLM.
 
 Both modes are represented within the same autoregressive generation framework, allowing the model to seamlessly switch between them at inference time.
+
+**Dual-process thinking** (borrowed from Kahneman's *System 1 / System 2* cognitive framework):
+
+| | **Fast thinking (System 1)** | **Slow thinking (System 2)** |
+|---|---|---|
+| Also called | Action-only | CoT + action |
+| How it works | Directly output action tokens | Generate reasoning text first, then action tokens |
+| When used | Simple, routine scenarios | Complex, ambiguous scenarios |
+| Speed | Fast | Slow (more tokens to generate) |
+
+*Example — Scenario A (straight road, no obstacles):*
+> **Fast thinking:** `[token_142, token_142, ...]` — no reasoning, immediately emit keep-straight tokens.
+
+*Example — Scenario B (yellow light, pedestrian stepping off curb):*
+> **Slow thinking:** * CoT: "The traffic light is transitioning to red. A pedestrian is entering the crosswalk. The safe action is to decelerate and stop before the stop line."* → Action tokens: `[token_891, token_654, token_201, ...]`
+
+Training on both modes jointly teaches the model *when* to think verbosely vs. when to act immediately — a capability that RFT then reinforces by penalizing unnecessary CoT in simple scenarios.
+
+**Why train both modes jointly in SFT?**
+- If the model only learned **slow thinking**, it would generate unnecessary CoT for every simple scenario — adding inference latency with no benefit to planning quality.
+- If it only learned **fast thinking**, it would fail on complex cases (e.g., unprotected turns, occlusions, adversarial pedestrians) that require explicit multi-step reasoning to handle correctly.
+- Training on both modes jointly teaches the model to *recognize scenario complexity* and self-select the appropriate mode — a capability that RFT then further sharpens by penalizing unnecessary CoT usage in simple scenarios (reducing reasoning overhead by 66.8%).
 
 ### 3. Reinforcement Fine-Tuning (RFT) with Adaptive Reasoning
 
