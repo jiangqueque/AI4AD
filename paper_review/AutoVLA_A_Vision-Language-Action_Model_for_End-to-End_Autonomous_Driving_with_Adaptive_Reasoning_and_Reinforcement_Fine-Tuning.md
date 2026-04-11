@@ -83,13 +83,48 @@ Training on both modes jointly teaches the model *when* to think verbosely vs. w
 
 ### 3. Reinforcement Fine-Tuning (RFT) with Adaptive Reasoning
 
-After SFT, RFT is applied using **Group Relative Policy Optimization (GRPO)** to further optimize the policy with task-specific reward functions. GRPO updates the policy relative to a group of sampled trajectories:
+After SFT, RFT is applied using **Group Relative Policy Optimization (GRPO)** to further optimize the policy with task-specific reward functions. GRPO updates the policy relative to a group of sampled trajectories — where each sample is one **rollout**: a complete run of the model autoregressively generating a full sequence of tokens (CoT reasoning + action tokens) for a given scene. GRPO samples $G$ rollouts from the same scene, then updates the policy based on which rollouts scored higher reward relative to the group average.
 
 $$\mathcal{L}_{\text{GRPO}} = -\mathbb{E}\left[\sum_{t} \min\left(r_t \hat{A}_t, \text{clip}(r_t, 1-\epsilon, 1+\epsilon)\hat{A}_t\right)\right]$$
 
-where $r_t$ is the probability ratio and $\hat{A}_t$ is the advantage estimated from group-relative rewards.
+where:
+- $r_t = \frac{\pi_\theta(a_t \mid a_{\lt t}, \text{scene})}{\pi_{\theta_\text{old}}(a_t \mid a_{\lt t}, \text{scene})}$ — the **probability ratio** between the updated policy and the old policy. $r_t = 1$ means no change; $r_t > 1$ means the new policy makes this token more likely; $r_t < 1$ means less likely.
+- $\hat{A}_t$ — the **advantage**, estimated from group-relative rewards: how much better this trajectory was compared to others sampled from the same scene.
+- $\text{clip}(r_t, 1-\epsilon, 1+\epsilon)$ — hard-clamps $r_t$ into $[1-\epsilon, 1+\epsilon]$ (typically $\epsilon = 0.2$, so $[0.8, 1.2]$).
+- $\min(\cdot, \cdot)$ — takes the pessimistic (smaller) of the clipped and unclipped terms, preventing the optimizer from exploiting the unclipped objective.
+
+**Why clipping is needed:** Without it, a large positive advantage $\hat{A}_t$ would push $r_t$ very large, causing a destructively large policy update — the policy shifts too far in one step, forgets previously learned behavior, and training destabilizes. Clipping enforces a **trust region**: update the policy, but don't stray more than 20% from the old policy in a single step.
+
+| Situation | Effect |
+|---|---|
+| $r_t$ within $[0.8, 1.2]$ | Clipping inactive, normal gradient update |
+| $r_t > 1.2$ and $\hat{A}_t > 0$ | Clipped — stops over-rewarding already-likely tokens |
+| $r_t < 0.8$ and $\hat{A}_t < 0$ | Clipped — stops over-penalizing already-unlikely tokens |
 
 RFT's key contribution is **adaptive reasoning**: it penalizes unnecessary CoT generation in simple, unambiguous scenarios (where fast thinking suffices) while retaining slow thinking for genuinely complex situations. This reduces inference-time reasoning overhead by 66.8% (measured over 500 samples) without sacrificing planning quality.
+
+**Algorithm 1 — RFT for AutoVLA with GRPO, step-by-step:**
+
+| Line | Step | Explanation |
+|---|---|---|
+| 1 | Initialize $\pi_\text{ref} \leftarrow \pi_\text{SFT}$, $\pi_\theta \leftarrow \pi_\text{SFT}$ | Both policies start from the SFT model. $\pi_\text{ref}$ is **frozen** throughout as an anchor to prevent the RFT policy from drifting too far from SFT knowledge. |
+| 2 | `for` training step 1 to $K$ | Outer loop: repeat for $K$ gradient update steps. |
+| 3 | Sample scenario $U$ from $D$ | Pick one driving scene $U$ (camera images, HD map, surrounding agents, navigation command). |
+| 4 | `for` sample $i$ from 1 to $G$ | Inner loop: generate $G$ independent rollouts from the same scene $U$. $G$ is the group size. |
+| 5 | Sample $q$, $o_i$, $\pi_\theta(o_i\|q)$ | Run $\pi_\theta$ stochastically on $U$ to produce one complete rollout $o_i$ (CoT text + action tokens). Record per-token probabilities. |
+| 6 | $\pi_{\theta_\text{old}}(o_i\|q) \leftarrow \pi_\theta(o_i\|q)$ | Snapshot current probabilities as "old policy." Becomes the denominator of $r_t = \pi_\theta / \pi_{\theta_\text{old}}$ in the loss; held fixed during the update. |
+| 7 | Calculate $\pi_\text{ref}(o_i\|q)$ | Evaluate the frozen reference policy on rollout $o_i$. Used for KL regularization to prevent catastrophic forgetting. |
+| 8 | $\tau \leftarrow \mathcal{A}(o_i)$ | Decode action tokens back to motion primitives via the codebook: $\tau = \{(\Delta x, \Delta y, \Delta\theta)_1, \dots, (\Delta x, \Delta y, \Delta\theta)_{16}\}$. |
+| 9 | $r_i \leftarrow r_\text{Driving}(\tau, U) - \lambda_r r_\text{CoT}(o_i)$ | Score the rollout: $r_\text{Driving}$ rewards safe/compliant driving; $-\lambda_r r_\text{CoT}$ penalizes unnecessary CoT in simple scenes, driving **adaptive reasoning**. |
+| 10 | `end for` (inner loop) | All $G$ rollouts for scene $U$ have been collected: $\{o_1, \dots, o_G\}$ with rewards $\{r_1, \dots, r_G\}$. |
+| 11 | $\bar{r},\, \sigma_r \leftarrow \text{mean}, \text{std}(r_1,\dots,r_G)$ | Compute group statistics over all $G$ rewards after the inner loop. |
+| 12 | $A_i \leftarrow (r_i - \bar{r}) / \sigma_r$ | Normalize each rollout's reward relative to the group. $A_i > 0$: better than average (encourage); $A_i < 0$: worse (discourage). No separate value network needed. |
+| 13 | Compute $\mathcal{L}_\text{RFT}$ | Two terms: (1) policy gradient $\frac{\pi_\theta}{\pi_{\theta_\text{old}}} A_i$ — push policy toward high-advantage rollouts; (2) KL penalty $\beta \mathbb{D}_\text{KL}(\pi_\theta \| \pi_\text{ref})$ — stay close to the SFT policy. |
+| 14 | Optimize $\pi_\theta$ | Backpropagate $\mathcal{L}_\text{RFT}$ and update policy weights. |
+| 15 | `end for` (outer loop) | One training step complete. Proceed to the next step, sampling a new scene $U$ from $D$. |
+| 16 | Return $\pi_\text{RFT}$ | After $K$ steps, return the converged RFT policy. |
+
+
 
 ### Additional Innovations
 
@@ -139,13 +174,7 @@ A non-reactive, vision-based driving benchmark derived from nuPlan data that eva
 
 ## Limitations
 
-- **Small backbone (3B parameters):** AutoVLA uses Qwen2.5-VL-3B for deployment efficiency, but larger VLM backbones may offer significantly better reasoning and generalization that are not explored.
-- **Non-reactive simulation gap:** NAVSIM and nuPlan open-loop evaluations do not involve reactive agents; real closed-loop interaction with dynamic actors may expose additional failure modes.
-- **Discrete codebook coverage:** The $K = 2048$ action codebook may not capture rare or highly complex maneuvers (e.g., emergency evasion), as motion diversity is bounded by the clustering resolution.
-- **CoT quality dependence:** Slow-thinking performance relies on distilled CoT annotations from a larger VLM; errors or biases in the teacher model propagate to the student.
-- **Sim-to-real gap not fully addressed:** While the codebook is built from both real (WOMD) and simulated (CARLA-Garage) data, no explicit domain adaptation is applied for deployment on real vehicles.
-- **Evaluation primarily on established benchmarks:** Generalization to diverse geographic regions, weather conditions, or edge cases outside nuPlan/Waymo/CARLA distributions is not demonstrated.
-- **Code/weights release pending:** As of the paper's NeurIPS 2025 submission, the code, model weights, and datasets were announced to be released but may not yet be fully available.
+- **GPU-dependent inference:** Although dual-process adaptation achieves near-real-time inference (1 Hz), the model remains highly GPU-dependent, requiring significant memory and computing resources. Future work will focus on optimizing runtime efficiency and reducing computation overhead (e.g., through model quantization) to enable real-time deployment.
 
 ---
 

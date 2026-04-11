@@ -169,6 +169,7 @@ For literature review results, provide:
 
 ## Citation Rules
 
+- NEVER fabricate content — all claims in paper reviews (limitations, methods, results, datasets) must be extracted directly from the paper. Do not infer, generalize, or add context not present in the source.
 - NEVER hallucinate paper titles, authors, or venues
 - When searching programmatically, verify via Semantic Scholar API or Google Scholar
 - For standards, always cite the specific edition/year (e.g., ISO 26262:2018, not just "ISO 26262")
