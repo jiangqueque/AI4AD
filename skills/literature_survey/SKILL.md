@@ -1,9 +1,9 @@
 ---
 name: ad-literature-survey
-description: "Autonomous driving literature search and survey. Use when searching for AD papers on prediction, planning, end-to-end driving, world models, simulation, or datasets across top venues and arXiv."
+description: "Autonomous driving literature search and survey. Use when searching for AD papers on prediction, planning, end-to-end driving, world models, simulation, or datasets across top venues."
 metadata:
-  version: "1.0.0"
-  last_updated: "2026-04-05"
+  version: "1.1.0"
+  last_updated: "2026-05-12"
   author: "Feiyi Jiang"
   tags: ["autonomous-driving", "literature-survey", "autonomous-driving-models"]
 ---
@@ -46,10 +46,8 @@ Activate when the user:
 - **CVPR WAD workshop** — AD-specific VLM/VLA applications
 
 #### RL Methods (AD-focused only)
+- **CVPR / NeurIPS / ICLR / ICML/ ICCV** - RL applied to autonomous driving, especially trajectory planning
 - **CoRL** — RL-based driving policies, sim-to-real transfer
-- **RSS** — safety-constrained RL, constrained MDPs for AD
-- **IEEE IV / ITSC** — RL for traffic scenarios, intersection handling, merging
-- **CVPR WAD / NeurIPS ML4AD workshops** — RL applied to end-to-end driving
 
 #### Prediction & Planning
 - **CVPR / ICCV** — motion forecasting benchmarks (Argoverse, nuScenes)
@@ -85,6 +83,32 @@ Activate when the user:
 - **CARLA** — RL training, world model evaluation, sim-to-real
 - **nuPlan** — reactive closed-loop planning evaluation
 - **DriveLM / DriveVLM** — VLA/VLM evaluation for AD
+
+## Paper Inclusion Filter
+
+**Only include papers that meet at least one of the following criteria:**
+
+1. **Accepted at a top-tier conference:**
+   - Computer vision: CVPR, ICCV, ECCV
+   - ML/AI: NeurIPS, ICLR, ICML
+   - Robotics: CoRL, RSS, ICRA, IROS
+   - AD-specific: IEEE IV, ITSC
+
+2. **Published by a leading industry AD lab** (technical reports, blog papers, and arXiv preprints count if the affiliation is one of):
+   - Waymo, Wayve, NVIDIA, Tesla AI, Cruise, Mobileye, Zoox, Aurora, Motional
+
+3. **Exception — arXiv-only papers are permitted only if:**
+   - Authored by a group with a strong publication track record in AD (e.g., OpenDriveLab, BAIR, ETH Zurich, MARS Lab), AND
+   - The paper has significant community traction (e.g., widely cited, starred on HuggingFace/GitHub)
+
+**Explicitly exclude:**
+- Workshop-only papers (unless from WAD@CVPR or ML4AD@NeurIPS)
+- Preprints from unknown affiliations with no venue record
+- Papers submitted to but rejected or withdrawn from top venues
+
+When in doubt, verify acceptance status via OpenReview or the official conference accepted-papers page before including a paper.
+
+---
 
 ## Search Strategy
 
@@ -123,13 +147,11 @@ AD research uses evolving terminology. Always expand searches with:
 ### World Models
 - **NVIDIA Research** — GAIA-1 lineage, neural world simulators, DriveX
 - **Waymo Research** — large-scale world modeling, closed-loop simulation
-- **Waabi** — world models for scalable AD training (Prof. Urtasun)
-- **Toyota Research Institute** — generative world models for safety-critical evaluation
+- **Wayve** — world model
 
 ### VLA / VLM Models
 - **Shanghai AI Lab / OpenDriveLab** — DriveLM, DriveVLM, UniAD, SparseDrive
 - **Tsinghua University (MARS Lab)** — VLM-based driving, language-conditioned planning
-- **UC San Diego / UCSD** — LLM/VLM grounding for embodied agents
 - **Microsoft Research** — DriveGPT, multimodal driving foundation models
 
 ### RL Methods (AD)
