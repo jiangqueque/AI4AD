@@ -45,8 +45,8 @@ Before applying autoregressive modeling, we should first answer:
 
 ADC actions are discrete tokens converted from continuous trajectories. Possible tokenization methods include:
 
-1. Representing each action as an `(x, y, heading)` token at a fixed interval, such as every 0.5 seconds. *(SMART)*
-2. Representing each action as `(acceleration, curvature)` and discretizing the continuous ranges into bins. *(Alpamayo-R1)*
+1. Representing each action as an `(x, y, heading)` token at a fixed interval, such as every 0.5 seconds. ([SMART](https://arxiv.org/abs/2405.15677))
+2. Representing each action as `(acceleration, curvature)` and discretizing the continuous ranges into bins. ([Alpamayo-R1](https://arxiv.org/abs/2511.00088))
 
 The first approach directly models future vehicle **states**, while the second models how the vehicle **moves** from one state to the next.
 
@@ -204,13 +204,13 @@ where:
 
 The RL term is the **importance sampling ratio** times the **group-relative advantage**. The **KL divergence term** keeps the fine-tuned policy close to the reference policy, thereby retaining the human-like behaviors learned during pre-training.
 
-**Mixing in pre-training data.** The RFT dataset is mixed with the pre-training dataset, and a cross-entropy (CE) loss on pre-training samples is added:
+**Mixing in pre-training data.** The RFT dataset is mixed with the pre-training dataset, and a cross-entropy (CE) loss on pre-training samples is added.
+
+The idea follows [InstructGPT](https://arxiv.org/abs/2203.02155) (PPO-ptx), which adds a pre-training log-likelihood term $\gamma\,\mathbb{E}_{x\sim D_{\text{pretrain}}}[\log \pi^{\text{RL}}_\phi(x)]$ to the maximized RL objective. Since we minimize a loss, this is equivalent to adding a cross-entropy loss on pre-training samples, weighted by $\gamma$.
 
 $$
 \mathcal{L}_{\text{total}}(\phi) = \mathcal{L}_{\text{finetune}} - \gamma \, \mathbb{E}_{x \sim D_{\text{pretrain}}}\left[\log \pi_e(x)\right]
 $$
-
-where $\gamma$ controls the weight of the pre-training CE loss.
 
 ## Examples - Open-loop RFT
 
